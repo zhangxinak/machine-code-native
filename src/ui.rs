@@ -1,16 +1,17 @@
 use anyhow::{anyhow, Result};
 use std::cell::RefCell;
+use std::ffi::c_void;
 use std::sync::{Arc, Mutex, OnceLock};
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::HBRUSH;
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Graphics::Gdi::{UpdateWindow, COLOR_WINDOW, HBRUSH};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, LoadCursorW, MessageBoxW,
-    PostQuitMessage, RegisterClassW, SetWindowTextW, ShowWindow, TranslateMessage, UpdateWindow,
-    COLOR_WINDOW, CW_USEDEFAULT, HMENU, IDC_ARROW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG,
-    SW_SHOW, WINDOW_EX_STYLE, WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WNDCLASSW,
-    WS_BORDER, WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    PostQuitMessage, RegisterClassW, SetWindowTextW, ShowWindow, TranslateMessage, CW_USEDEFAULT,
+    HMENU, IDC_ARROW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, SW_SHOW, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WNDCLASSW, WS_BORDER, WS_CHILD,
+    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 use crate::diagnostics;
@@ -45,13 +46,14 @@ pub fn run(state: Arc<Mutex<AppState>>) -> Result<()> {
         .map_err(|_| anyhow!("UI state has already been initialized"))?;
 
     unsafe {
-        let instance = GetModuleHandleW(None)?;
+        let module = GetModuleHandleW(None)?;
+        let instance = HINSTANCE(module.0);
         let class_name = to_wide("MachineCodeNativeWindow");
         let title = to_wide("机器码获取工具");
 
         let wnd_class = WNDCLASSW {
             hCursor: LoadCursorW(None, IDC_ARROW)?,
-            hInstance: instance.into(),
+            hInstance: instance,
             lpszClassName: PCWSTR(class_name.as_ptr()),
             lpfnWndProc: Some(wnd_proc),
             hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize),
@@ -72,9 +74,9 @@ pub fn run(state: Arc<Mutex<AppState>>) -> Result<()> {
             CW_USEDEFAULT,
             790,
             490,
-            None,
-            None,
-            Some(instance.into()),
+            HWND::default(),
+            HMENU::default(),
+            instance,
             None,
         )?;
 
@@ -307,7 +309,8 @@ unsafe fn create_control(
 ) -> Result<HWND> {
     let class = to_wide(class);
     let text = to_wide(text);
-    let instance = GetModuleHandleW(None)?;
+    let module = GetModuleHandleW(None)?;
+    let instance = HINSTANCE(module.0);
     let hwnd = CreateWindowExW(
         WINDOW_EX_STYLE::default(),
         PCWSTR(class.as_ptr()),
@@ -317,9 +320,9 @@ unsafe fn create_control(
         y,
         width,
         height,
-        Some(parent),
-        Some(HMENU(id as isize)),
-        Some(instance.into()),
+        parent,
+        HMENU(id as usize as *mut c_void),
+        instance,
         None,
     )?;
     Ok(hwnd)
@@ -341,12 +344,7 @@ fn show_message(hwnd: HWND, title: &str, text: &str, error: bool) {
         MB_OK | MB_ICONINFORMATION
     };
     unsafe {
-        MessageBoxW(
-            Some(hwnd),
-            PCWSTR(text.as_ptr()),
-            PCWSTR(title.as_ptr()),
-            flags,
-        );
+        MessageBoxW(hwnd, PCWSTR(text.as_ptr()), PCWSTR(title.as_ptr()), flags);
     }
 }
 

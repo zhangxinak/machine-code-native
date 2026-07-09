@@ -473,17 +473,11 @@ fn smbios_get_string(strings: &[u8], index: u8) -> Result<String> {
 
 #[cfg(windows)]
 fn device_io_disk_serial() -> Result<String> {
-    use std::mem::size_of;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{CloseHandle, GENERIC_READ, HANDLE};
     use windows::Win32::Storage::FileSystem::{
         CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
-    use windows::Win32::System::Ioctl::{
-        PropertyStandardQuery, StorageDeviceProperty, IOCTL_STORAGE_QUERY_PROPERTY,
-        STORAGE_DEVICE_DESCRIPTOR, STORAGE_PROPERTY_QUERY,
-    };
-    use windows::Win32::System::IO::DeviceIoControl;
 
     for index in 0..8 {
         let path = format!("\\\\.\\PhysicalDrive{}", index);
@@ -578,7 +572,6 @@ unsafe fn query_storage_serial(handle: windows::Win32::Foundation::HANDLE) -> Re
 
 #[cfg(windows)]
 fn wmi_string(class: &str, property: &str) -> Result<String> {
-    use serde::Deserialize;
     use std::collections::HashMap;
     use wmi::{COMLibrary, Variant, WMIConnection};
 
