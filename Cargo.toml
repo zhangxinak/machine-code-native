@@ -1,0 +1,45 @@
+[package]
+name = "machine-code-native"
+version = "3.0.0"
+edition = "2021"
+rust-version = "1.77"
+description = "Windows native machine code tool without WebView2"
+license = "Proprietary"
+
+[[bin]]
+name = "machine-code-native"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+hex = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Ole",
+  "Win32_System_Registry",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_Controls",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+wmi = "0.13"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true

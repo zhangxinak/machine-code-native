@@ -1,0 +1,58 @@
+name: build native windows tool
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Windows ${{ matrix.name }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x64
+            target: x86_64-pc-windows-msvc
+            artifact: machine-code-native-windows-x64
+          - name: x86
+            target: i686-pc-windows-msvc
+            artifact: machine-code-native-windows-x86
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.77.2
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock', 'Cargo.toml') }}
+
+      - name: Check format
+        run: cargo fmt --check
+
+      - name: Check
+        run: cargo check --locked --target ${{ matrix.target }}
+
+      - name: Build package
+        shell: pwsh
+        run: .\scripts\package.ps1 -Target ${{ matrix.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}.zip
+          if-no-files-found: error
