@@ -1,0 +1,30 @@
+version: '1.0'
+name: machine-code-native-pr
+displayName: Machine Code Native PR
+
+triggers:
+  pr:
+    branches:
+      include:
+        - master
+        - main
+
+stages:
+  - stage:
+    name: check
+    displayName: Check
+    strategy: naturally
+    trigger: auto
+
+steps:
+  - step: build@gcc
+    name: rust_check_x64
+    displayName: Rust Check x64
+    gccVersion: 9.4
+    commands:
+      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.77.2
+      - source "$HOME/.cargo/env"
+      - rustup component add rustfmt
+      - rustup target add x86_64-pc-windows-msvc
+      - cargo fmt --check
+      - cargo check --locked --target x86_64-pc-windows-msvc
