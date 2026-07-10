@@ -20,9 +20,17 @@ pub fn append_log(message: impl AsRef<str>) {
         let _ = fs::create_dir_all(parent);
     }
 
-    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(file, "[{}] {}", timestamp, message.as_ref());
+        let pid = std::process::id();
+        let thread_id = format!("{:?}", std::thread::current().id());
+        for line in message.as_ref().lines() {
+            let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+            let _ = writeln!(
+                file,
+                "[{}] [pid:{}] [tid:{}] {}",
+                timestamp, pid, thread_id, line
+            );
+        }
     }
 }
 

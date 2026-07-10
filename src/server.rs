@@ -2,19 +2,24 @@ use serde::Deserialize;
 use serde_json::json;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, Mutex,
+};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::diagnostics;
 use crate::hardware::collect_machine_info;
 use crate::state::AppState;
 
 const DEFAULT_PORT: u16 = 18888;
+static NEXT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug)]
 struct HttpRequest {
     method: String,
+    raw_path: String,
     path: String,
     body: Vec<u8>,
 }
@@ -33,6 +38,7 @@ pub fn start_server(state: Arc<Mutex<AppState>>) {
     for endpoint in endpoints {
         let state = Arc::clone(&state);
         thread::spawn(move || {
+            diagnostics::append_log(format!("localhost API 准备绑定: endpoint={}", endpoint));
             if let Err(error) = run_server(state, endpoint) {
                 diagnostics::append_log(format!("localhost API 启动失败: {}: {}", endpoint, error));
             }
@@ -62,10 +68,20 @@ fn run_server(state: Arc<Mutex<AppState>>, endpoint: SocketAddr) -> std::io::Res
 }
 
 fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<AppState>>) -> std::io::Result<()> {
+    let request_id = NEXT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+    let started = Instant::now();
+    let peer = stream
+        .peer_addr()
+        .map(|addr| addr.to_string())
+        .unwrap_or_else(|error| format!("unknown: {}", error));
     stream.set_read_timeout(Some(Duration::from_secs(3)))?;
     let request = match read_request(&mut stream) {
         Ok(request) => request,
         Err(error) => {
+            diagnostics::append_log(format!(
+                "HTTP 请求读取失败: request_id={}, peer={}, error={}",
+                request_id, peer, error
+            ));
             write_response(
                 &mut stream,
                 400,
@@ -73,18 +89,50 @@ fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<AppState>>) -> std:
                 "text/plain; charset=utf-8",
                 error.to_string().as_bytes(),
             )?;
+            diagnostics::append_log(format!(
+                "HTTP 响应: request_id={}, peer={}, status=400 Bad Request, body_bytes={}, elapsed_ms={}",
+                request_id,
+                peer,
+                error.to_string().len(),
+                started.elapsed().as_millis()
+            ));
             return Ok(());
         }
     };
 
     if request.method == "OPTIONS" {
         write_response(&mut stream, 204, "No Content", "text/plain", b"")?;
+        diagnostics::append_log(format!(
+            "HTTP 响应: request_id={}, peer={}, method=OPTIONS, path={}, status=204, elapsed_ms={}",
+            request_id,
+            peer,
+            request.path,
+            started.elapsed().as_millis()
+        ));
         return Ok(());
     }
 
-    diagnostics::append_log(format!("HTTP 请求: {} {}", request.method, request.path));
+    diagnostics::append_log(format!(
+        "HTTP 请求: request_id={}, peer={}, method={}, raw_path={}, path={}, body_bytes={}",
+        request_id,
+        peer,
+        request.method,
+        request.raw_path,
+        request.path,
+        request.body.len()
+    ));
     let response = route_request(request, state);
-    write_json(&mut stream, response.0, response.1, &response.2)
+    let body_bytes = write_json(&mut stream, response.0, response.1, &response.2)?;
+    diagnostics::append_log(format!(
+        "HTTP 响应: request_id={}, peer={}, status={} {}, body_bytes={}, elapsed_ms={}",
+        request_id,
+        peer,
+        response.0,
+        response.1,
+        body_bytes,
+        started.elapsed().as_millis()
+    ));
+    Ok(())
 }
 
 fn route_request(
@@ -103,11 +151,20 @@ fn route_request(
         ),
         ("GET", "/api/auth-status") => {
             let state = state.lock().expect("state lock poisoned");
+            diagnostics::append_log(format!(
+                "HTTP auth-status: authorized={}, has_machine_info={}",
+                state.authorized,
+                state.machine_info.is_some()
+            ));
             (200, "OK", json!({ "authorized": state.authorized }))
         }
         ("POST", "/api/set-auth") => {
             match serde_json::from_slice::<SetAuthRequest>(&request.body) {
                 Ok(payload) => {
+                    diagnostics::append_log(format!(
+                        "HTTP set-auth: requested_authorized={}",
+                        payload.authorized
+                    ));
                     let mut state = state.lock().expect("state lock poisoned");
                     state.set_authorized(payload.authorized);
                     (
@@ -119,14 +176,17 @@ fn route_request(
                         }),
                     )
                 }
-                Err(error) => (
-                    400,
-                    "Bad Request",
-                    json!({
-                        "success": false,
-                        "message": format!("JSON 参数错误: {}", error),
-                    }),
-                ),
+                Err(error) => {
+                    diagnostics::append_log(format!("HTTP set-auth 参数错误: {}", error));
+                    (
+                        400,
+                        "Bad Request",
+                        json!({
+                            "success": false,
+                            "message": format!("JSON 参数错误: {}", error),
+                        }),
+                    )
+                }
             }
         }
         ("GET", "/api/machine-code") => {
@@ -134,6 +194,11 @@ fn route_request(
                 let state = state.lock().expect("state lock poisoned");
                 (state.authorized, state.machine_info.clone())
             };
+            diagnostics::append_log(format!(
+                "HTTP machine-code: authorized={}, cache_hit={}",
+                authorized,
+                cached_info.is_some()
+            ));
 
             if !authorized {
                 return (
@@ -150,6 +215,7 @@ fn route_request(
             let info = match cached_info {
                 Some(info) => info,
                 None => {
+                    diagnostics::append_log("HTTP machine-code: 缓存为空，开始采集机器码");
                     let info = collect_machine_info();
                     let mut state = state.lock().expect("state lock poisoned");
                     state.set_machine_info(info.clone());
@@ -207,7 +273,7 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<HttpRequest> {
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "缺少请求行"))?;
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("").to_string();
-    let raw_path = parts.next().unwrap_or("/");
+    let raw_path = parts.next().unwrap_or("/").to_string();
     let path = raw_path.split('?').next().unwrap_or("/").to_string();
 
     let content_length = lines
@@ -227,7 +293,12 @@ fn read_request(stream: &mut TcpStream) -> std::io::Result<HttpRequest> {
     }
     body.truncate(content_length);
 
-    Ok(HttpRequest { method, path, body })
+    Ok(HttpRequest {
+        method,
+        raw_path,
+        path,
+        body,
+    })
 }
 
 fn find_header_end(buffer: &[u8]) -> Option<usize> {
@@ -239,7 +310,7 @@ fn write_json(
     status: u16,
     reason: &str,
     value: &serde_json::Value,
-) -> std::io::Result<()> {
+) -> std::io::Result<usize> {
     let body = serde_json::to_vec_pretty(value).unwrap_or_else(|_| b"{}".to_vec());
     write_response(
         stream,
@@ -247,7 +318,8 @@ fn write_json(
         reason,
         "application/json; charset=utf-8",
         &body,
-    )
+    )?;
+    Ok(body.len())
 }
 
 fn write_response(

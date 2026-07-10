@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::process::Command;
+use std::time::Instant;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -72,6 +73,7 @@ impl MachineInfo {
 }
 
 pub fn collect_machine_info() -> MachineInfo {
+    let started = Instant::now();
     diagnostics::append_log("开始采集机器码");
 
     let mac = collect_mac();
@@ -106,7 +108,12 @@ pub fn collect_machine_info() -> MachineInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
     };
 
-    diagnostics::append_log(format!("机器码采集完成: confidence={}", info.confidence));
+    diagnostics::append_log(format!(
+        "机器码采集完成: confidence={}, machine_id={}, elapsed_ms={}",
+        info.confidence,
+        info.machine_id,
+        started.elapsed().as_millis()
+    ));
     info
 }
 
@@ -205,12 +212,34 @@ fn first_valid(label: &str, attempts: &[(&str, Result<String>)]) -> FieldResult 
         match result {
             Ok(value) => {
                 if let Some(valid) = valid_hardware_value(value) {
-                    diagnostics::append_log(format!("{} 获取成功: source={}", label, source));
+                    diagnostics::append_log(format!(
+                        "{} 获取成功: source={}, value={}",
+                        label,
+                        source,
+                        mask_hardware_value(&valid)
+                    ));
                     return FieldResult::ok(label, valid, source);
                 }
-                errors.push(format!("{} 返回无效值: {}", source, value.trim()));
+                let invalid = value.trim();
+                diagnostics::append_log(format!(
+                    "{} 来源返回无效值: source={}, value={}",
+                    label,
+                    source,
+                    mask_hardware_value(invalid)
+                ));
+                errors.push(format!(
+                    "{} 返回无效值: {}",
+                    source,
+                    mask_hardware_value(invalid)
+                ));
             }
-            Err(error) => errors.push(format!("{} 失败: {}", source, error)),
+            Err(error) => {
+                diagnostics::append_log(format!(
+                    "{} 来源失败: source={}, error={}",
+                    label, source, error
+                ));
+                errors.push(format!("{} 失败: {}", source, error));
+            }
         }
     }
 
@@ -219,8 +248,60 @@ fn first_valid(label: &str, attempts: &[(&str, Result<String>)]) -> FieldResult 
     FieldResult::fail(label, "multi-source", error)
 }
 
+fn timed_attempt(
+    label: &str,
+    source: &'static str,
+    f: impl FnOnce() -> Result<String>,
+) -> Result<String> {
+    let started = Instant::now();
+    diagnostics::append_log(format!("{} 来源开始: source={}", label, source));
+    let result = f();
+    match &result {
+        Ok(value) => diagnostics::append_log(format!(
+            "{} 来源完成: source={}, ok=true, value={}, elapsed_ms={}",
+            label,
+            source,
+            mask_hardware_value(value),
+            started.elapsed().as_millis()
+        )),
+        Err(error) => diagnostics::append_log(format!(
+            "{} 来源完成: source={}, ok=false, error={}, elapsed_ms={}",
+            label,
+            source,
+            error,
+            started.elapsed().as_millis()
+        )),
+    }
+    result
+}
+
+fn mask_hardware_value(value: &str) -> String {
+    let trimmed = value.trim();
+    let char_count = trimmed.chars().count();
+    if char_count <= 8 {
+        return trimmed.to_string();
+    }
+
+    let prefix: String = trimmed.chars().take(4).collect();
+    let suffix: String = trimmed
+        .chars()
+        .rev()
+        .take(4)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    format!("{}***{}(len={})", prefix, suffix, char_count)
+}
+
 fn collect_mac() -> FieldResult {
-    first_valid("mac", &[("ip-helper", native_mac_address())])
+    first_valid(
+        "mac",
+        &[(
+            "ip-helper",
+            timed_attempt("mac", "ip-helper", native_mac_address),
+        )],
+    )
 }
 
 fn collect_baseboard_serial() -> FieldResult {
@@ -229,15 +310,24 @@ fn collect_baseboard_serial() -> FieldResult {
         &[
             (
                 "wmi:Win32_BaseBoard.SerialNumber",
-                wmi_string("Win32_BaseBoard", "SerialNumber"),
+                timed_attempt("motherboard", "wmi:Win32_BaseBoard.SerialNumber", || {
+                    wmi_string("Win32_BaseBoard", "SerialNumber")
+                }),
             ),
-            ("smbios:baseboard.serial", smbios_string(2, 4)),
+            (
+                "smbios:baseboard.serial",
+                timed_attempt("motherboard", "smbios:baseboard.serial", || {
+                    smbios_string(2, 4)
+                }),
+            ),
             (
                 "wmic:baseboard",
-                wmic_value(
-                    &["baseboard", "get", "serialnumber", "/value"],
-                    "SerialNumber",
-                ),
+                timed_attempt("motherboard", "wmic:baseboard", || {
+                    wmic_value(
+                        &["baseboard", "get", "serialnumber", "/value"],
+                        "SerialNumber",
+                    )
+                }),
             ),
         ],
     )
@@ -249,11 +339,15 @@ fn collect_cpu_id() -> FieldResult {
         &[
             (
                 "wmi:Win32_Processor.ProcessorId",
-                wmi_string("Win32_Processor", "ProcessorId"),
+                timed_attempt("cpu", "wmi:Win32_Processor.ProcessorId", || {
+                    wmi_string("Win32_Processor", "ProcessorId")
+                }),
             ),
             (
                 "wmic:cpu",
-                wmic_value(&["cpu", "get", "processorid", "/value"], "ProcessorId"),
+                timed_attempt("cpu", "wmic:cpu", || {
+                    wmic_value(&["cpu", "get", "processorid", "/value"], "ProcessorId")
+                }),
             ),
         ],
     )
@@ -265,15 +359,24 @@ fn collect_disk_serial() -> FieldResult {
         &[
             (
                 "wmi:Win32_DiskDrive.SerialNumber",
-                wmi_string("Win32_DiskDrive", "SerialNumber"),
+                timed_attempt("disk", "wmi:Win32_DiskDrive.SerialNumber", || {
+                    wmi_string("Win32_DiskDrive", "SerialNumber")
+                }),
             ),
-            ("device-io-control:PhysicalDrive", device_io_disk_serial()),
+            (
+                "device-io-control:PhysicalDrive",
+                timed_attempt("disk", "device-io-control:PhysicalDrive", || {
+                    device_io_disk_serial()
+                }),
+            ),
             (
                 "wmic:diskdrive",
-                wmic_value(
-                    &["diskdrive", "get", "serialnumber", "/value"],
-                    "SerialNumber",
-                ),
+                timed_attempt("disk", "wmic:diskdrive", || {
+                    wmic_value(
+                        &["diskdrive", "get", "serialnumber", "/value"],
+                        "SerialNumber",
+                    )
+                }),
             ),
         ],
     )
@@ -285,11 +388,17 @@ fn collect_system_uuid() -> FieldResult {
         &[
             (
                 "wmi:Win32_ComputerSystemProduct.UUID",
-                wmi_string("Win32_ComputerSystemProduct", "UUID"),
+                timed_attempt(
+                    "system_uuid",
+                    "wmi:Win32_ComputerSystemProduct.UUID",
+                    || wmi_string("Win32_ComputerSystemProduct", "UUID"),
+                ),
             ),
             (
                 "wmic:csproduct",
-                wmic_value(&["csproduct", "get", "uuid", "/value"], "UUID"),
+                timed_attempt("system_uuid", "wmic:csproduct", || {
+                    wmic_value(&["csproduct", "get", "uuid", "/value"], "UUID")
+                }),
             ),
         ],
     )
@@ -301,21 +410,30 @@ fn collect_bios_serial() -> FieldResult {
         &[
             (
                 "wmi:Win32_BIOS.SerialNumber",
-                wmi_string("Win32_BIOS", "SerialNumber"),
+                timed_attempt("bios", "wmi:Win32_BIOS.SerialNumber", || {
+                    wmi_string("Win32_BIOS", "SerialNumber")
+                }),
             ),
-            ("smbios:bios.serial", smbios_string(0, 7)),
+            (
+                "smbios:bios.serial",
+                timed_attempt("bios", "smbios:bios.serial", || smbios_string(0, 7)),
+            ),
             (
                 "wmic:bios",
-                wmic_value(&["bios", "get", "serialnumber", "/value"], "SerialNumber"),
+                timed_attempt("bios", "wmic:bios", || {
+                    wmic_value(&["bios", "get", "serialnumber", "/value"], "SerialNumber")
+                }),
             ),
         ],
     )
 }
 
 fn collect_computer_name() -> FieldResult {
-    let name = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .map_err(|e| anyhow!("读取环境变量失败: {}", e));
+    let name = timed_attempt("computer_name", "env:COMPUTERNAME", || {
+        std::env::var("COMPUTERNAME")
+            .or_else(|_| std::env::var("HOSTNAME"))
+            .map_err(|e| anyhow!("读取环境变量失败: {}", e))
+    });
     first_valid("computer_name", &[("env:COMPUTERNAME", name)])
 }
 
@@ -502,11 +620,19 @@ fn device_io_disk_serial() -> Result<String> {
                     continue;
                 }
             };
+            diagnostics::append_log(format!("打开 {} 成功", path));
 
             let result = query_storage_serial(handle);
             let _ = CloseHandle(handle);
             match result {
-                Ok(serial) => return Ok(serial),
+                Ok(serial) => {
+                    diagnostics::append_log(format!(
+                        "查询 {} 序列号成功: value={}",
+                        path,
+                        mask_hardware_value(&serial)
+                    ));
+                    return Ok(serial);
+                }
                 Err(error) => {
                     diagnostics::append_log(format!("查询 {} 序列号失败: {}", path, error))
                 }
@@ -587,9 +713,15 @@ fn wmi_string(class: &str, property: &str) -> Result<String> {
     let com = COMLibrary::new().map_err(|e| anyhow!("初始化 COM/WMI 失败: {}", e))?;
     let wmi = WMIConnection::new(com.into()).map_err(|e| anyhow!("连接 WMI 失败: {}", e))?;
     let query = format!("SELECT {} FROM {}", property, class);
+    diagnostics::append_log(format!("WMI 查询开始: query={}", query));
     let rows: Vec<Row> = wmi
         .raw_query(&query)
         .map_err(|e| anyhow!("执行 WMI 查询失败 [{}]: {}", query, e))?;
+    diagnostics::append_log(format!(
+        "WMI 查询完成: query={}, rows={}",
+        query,
+        rows.len()
+    ));
 
     for row in rows {
         if let Some(value) = row.values.get(property) {
@@ -627,12 +759,25 @@ fn wmic_value(args: &[&str], key: &str) -> Result<String> {
     command.args(args);
     hide_child_console_window(&mut command);
 
+    diagnostics::append_log(format!("wmic 命令开始: args={}", args.join(" ")));
     let output = command
         .output()
         .map_err(|e| anyhow!("启动 wmic 失败: {}", e))?;
+    diagnostics::append_log(format!(
+        "wmic 命令完成: args={}, status={}, stdout_bytes={}, stderr_bytes={}",
+        args.join(" "),
+        output.status,
+        output.stdout.len(),
+        output.stderr.len()
+    ));
 
     if !output.status.success() {
-        return Err(anyhow!("wmic 退出码: {}", output.status));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!(
+            "wmic 退出码: {}, stderr={}",
+            output.status,
+            stderr.trim()
+        ));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);

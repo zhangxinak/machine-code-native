@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use std::cell::RefCell;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
@@ -189,16 +190,24 @@ unsafe fn create_controls(hwnd: HWND) -> Result<()> {
 fn handle_command(hwnd: HWND, id: i32) {
     match id {
         ID_AUTH => {
+            let started = Instant::now();
+            diagnostics::append_log("UI 操作: 点击开启/取消授权按钮");
             let should_collect = with_state(|state| {
                 let next = !state.authorized;
                 state.set_authorized(next);
                 next
             });
             if should_collect {
+                diagnostics::append_log("UI 授权开启: 开始同步采集机器码");
                 let info = collect_machine_info();
                 with_state(|state| state.set_machine_info(info));
             }
             update_ui();
+            diagnostics::append_log(format!(
+                "UI 授权操作完成: should_collect={}, elapsed_ms={}",
+                should_collect,
+                started.elapsed().as_millis()
+            ));
         }
         ID_CHECK_UPDATE => {
             show_message(hwnd, "检查更新", "当前已是最新版本", false);

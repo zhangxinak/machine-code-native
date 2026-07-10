@@ -12,7 +12,17 @@ use state::AppState;
 
 fn main() {
     diagnostics::clear_log();
-    diagnostics::append_log("机器码获取工具 Native 版启动");
+    diagnostics::append_log(format!(
+        "机器码获取工具 Native 版启动: version={}, exe={}, cwd={}, log={}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::current_exe()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|error| format!("读取失败: {}", error)),
+        std::env::current_dir()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|error| format!("读取失败: {}", error)),
+        diagnostics::log_path().display()
+    ));
 
     let state = Arc::new(Mutex::new(AppState::new()));
     server::start_server(Arc::clone(&state));
