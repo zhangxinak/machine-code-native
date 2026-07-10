@@ -28,7 +28,6 @@ try {
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
     Copy-Item -LiteralPath $ExePath -Destination (Join-Path $OutDir "machine-code-native.exe")
-    Copy-Item -LiteralPath $ExePath -Destination (Join-Path $OutDir "机器码获取工具-Native.exe")
 
     @'
 @echo off
@@ -66,7 +65,7 @@ call "%~dp0diagnostics.bat"
 机器码获取工具 Native 版
 
 使用方式：
-1. 双击「机器码获取工具-Native.exe」或「machine-code-native.exe」。
+1. 双击「machine-code-native.exe」。
 2. 点击「开启授权」后，工具会采集机器码。
 3. 网页可访问：http://127.0.0.1:18888/api/machine-code
 4. 若异常，优先双击「diagnostics.bat」。如果需要中文入口，也可以双击「诊断.bat」。日志路径：
