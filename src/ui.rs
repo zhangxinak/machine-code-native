@@ -15,11 +15,10 @@ use windows::Win32::UI::Controls::EM_SETMARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, LoadCursorW, MessageBoxW,
     PostQuitMessage, RegisterClassW, SendMessageW, SetWindowTextW, ShowWindow, TranslateMessage,
-    BS_GROUPBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL,
-    ES_READONLY, HMENU, IDC_ARROW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, SW_SHOW,
-    WINDOW_EX_STYLE, WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_SETFONT, WNDCLASSW,
-    WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
-    WS_VISIBLE,
+    BS_PUSHBUTTON, CW_USEDEFAULT, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL, ES_READONLY,
+    HMENU, IDC_ARROW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, SW_SHOW, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD,
+    WS_EX_CLIENTEDGE, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
 };
 
 use crate::diagnostics;
@@ -80,8 +79,8 @@ pub fn run(state: Arc<Mutex<AppState>>) -> Result<()> {
             WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            790,
-            470,
+            820,
+            430,
             HWND::default(),
             HMENU::default(),
             instance,
@@ -128,49 +127,53 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
 
 unsafe fn create_controls(hwnd: HWND) -> Result<()> {
     let font = create_font(-15, FW_NORMAL.0 as i32, "Microsoft YaHei");
-    let section_font = create_font(-17, FW_BOLD.0 as i32, "Microsoft YaHei");
+    let title_font = create_font(-22, FW_BOLD.0 as i32, "Microsoft YaHei");
+    let section_font = create_font(-16, FW_BOLD.0 as i32, "Microsoft YaHei");
     let value_font = create_font(-14, FW_NORMAL.0 as i32, "Microsoft YaHei");
 
-    let machine_group = create_group(hwnd, "机器码信息", 24, 22, 732, 250)?;
-    set_font(machine_group, section_font);
+    let title = create_label(hwnd, "机器码获取工具", 28, 24, 220, 34)?;
+    set_font(title, title_font);
 
-    let auth_button = create_button(hwnd, "开启授权", ID_AUTH, 638, 48, 92, 32)?;
+    let auth_button = create_button(hwnd, "开启授权", ID_AUTH, 664, 26, 108, 34)?;
     set_font(auth_button, font);
 
-    let mac_label = create_label(hwnd, "网卡MAC地址", 52, 72, 102, 24)?;
+    let machine_title = create_label(hwnd, "机器码信息", 28, 82, 120, 26)?;
+    set_font(machine_title, section_font);
+
+    let mac_label = create_label(hwnd, "网卡MAC地址", 46, 122, 108, 24)?;
     set_font(mac_label, font);
-    let mac = create_value(hwnd, 170, 68, 540, 30)?;
+    let mac = create_value(hwnd, 170, 118, 590, 32)?;
     set_font(mac, value_font);
 
-    let motherboard_label = create_label(hwnd, "主板序列号", 52, 116, 102, 24)?;
+    let motherboard_label = create_label(hwnd, "主板序列号", 46, 166, 108, 24)?;
     set_font(motherboard_label, font);
-    let motherboard = create_value(hwnd, 170, 112, 540, 30)?;
+    let motherboard = create_value(hwnd, 170, 162, 590, 32)?;
     set_font(motherboard, value_font);
 
-    let cpu_label = create_label(hwnd, "CPU序列号", 52, 160, 102, 24)?;
+    let cpu_label = create_label(hwnd, "CPU序列号", 46, 210, 108, 24)?;
     set_font(cpu_label, font);
-    let cpu = create_value(hwnd, 170, 156, 540, 30)?;
+    let cpu = create_value(hwnd, 170, 206, 590, 32)?;
     set_font(cpu, value_font);
 
-    let disk_label = create_label(hwnd, "硬盘序列号", 52, 204, 102, 24)?;
+    let disk_label = create_label(hwnd, "硬盘序列号", 46, 254, 108, 24)?;
     set_font(disk_label, font);
-    let disk = create_value(hwnd, 170, 200, 540, 30)?;
+    let disk = create_value(hwnd, 170, 250, 590, 32)?;
     set_font(disk, value_font);
 
-    let software_group = create_group(hwnd, "软件信息", 24, 294, 360, 82)?;
-    set_font(software_group, section_font);
+    let software_title = create_label(hwnd, "软件信息", 28, 312, 100, 26)?;
+    set_font(software_title, section_font);
 
-    let version_label = create_label(hwnd, "版本:", 52, 329, 46, 24)?;
+    let version_label = create_label(hwnd, "版本:", 46, 350, 46, 24)?;
     set_font(version_label, font);
-    let software_version = create_value(hwnd, 106, 325, 112, 30)?;
+    let software_version = create_value(hwnd, 98, 346, 116, 32)?;
     set_font(software_version, value_font);
 
-    let check_update = create_button(hwnd, "检查更新", ID_CHECK_UPDATE, 236, 325, 96, 30)?;
+    let check_update = create_button(hwnd, "检查更新", ID_CHECK_UPDATE, 232, 346, 96, 32)?;
     set_font(check_update, font);
 
-    let agreement = create_button(hwnd, "用户协议", ID_USER_AGREEMENT, 526, 325, 92, 30)?;
+    let agreement = create_button(hwnd, "用户协议", ID_USER_AGREEMENT, 558, 346, 96, 32)?;
     set_font(agreement, font);
-    let privacy = create_button(hwnd, "隐私策略", ID_PRIVACY_POLICY, 638, 325, 92, 30)?;
+    let privacy = create_button(hwnd, "隐私策略", ID_PRIVACY_POLICY, 676, 346, 96, 32)?;
     set_font(privacy, font);
 
     HANDLES.with(|handles| {
@@ -335,27 +338,6 @@ unsafe fn create_button(
         width,
         height,
         WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_PUSHBUTTON as u32),
-    )
-}
-
-unsafe fn create_group(
-    hwnd: HWND,
-    text: &str,
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-) -> Result<HWND> {
-    create_control(
-        hwnd,
-        "BUTTON",
-        text,
-        0,
-        x,
-        y,
-        width,
-        height,
-        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_GROUPBOX as u32),
     )
 }
 
