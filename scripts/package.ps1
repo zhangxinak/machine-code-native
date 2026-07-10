@@ -27,43 +27,49 @@ try {
     }
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
+    Copy-Item -LiteralPath $ExePath -Destination (Join-Path $OutDir "machine-code-native.exe")
     Copy-Item -LiteralPath $ExePath -Destination (Join-Path $OutDir "机器码获取工具-Native.exe")
 
     @'
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo 机器码获取工具 Native 版 - 诊断脚本
+echo Machine Code Native - diagnostics
 echo ========================================
 echo.
-echo 程序目录: %~dp0
-echo 日志路径: %APPDATA%\machine-code-native\startup.log
+echo Program dir: %~dp0
+echo Log path: %APPDATA%\machine-code-native\startup.log
 echo.
-echo [1] 启动程序
-start "" "%~dp0机器码获取工具-Native.exe"
+echo [1] Start program
+start "" "%~dp0machine-code-native.exe"
 timeout /t 3 >nul
 echo.
-echo [2] 检查本地 API
+echo [2] Check localhost API
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18888/health | Select-Object -ExpandProperty Content } catch { $_.Exception.Message }"
 echo.
-echo [3] 输出日志
+echo [3] Print log
 if exist "%APPDATA%\machine-code-native\startup.log" (
   type "%APPDATA%\machine-code-native\startup.log"
 ) else (
-  echo 未生成日志。
+  echo Log file was not created.
 )
 echo.
 pause
+'@ | Set-Content -Path (Join-Path $OutDir "diagnostics.bat") -Encoding ASCII
+
+    @'
+@echo off
+call "%~dp0diagnostics.bat"
 '@ | Set-Content -Path (Join-Path $OutDir "诊断.bat") -Encoding OEM
 
     @"
 机器码获取工具 Native 版
 
 使用方式：
-1. 双击「机器码获取工具-Native.exe」。
+1. 双击「机器码获取工具-Native.exe」或「machine-code-native.exe」。
 2. 点击「开启授权」后，工具会采集机器码。
 3. 网页可访问：http://127.0.0.1:18888/api/machine-code
-4. 若异常，双击「诊断.bat」，或查看：
+4. 若异常，优先双击「diagnostics.bat」。如果需要中文入口，也可以双击「诊断.bat」。日志路径：
    %APPDATA%\machine-code-native\startup.log
 
 说明：
