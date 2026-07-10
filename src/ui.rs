@@ -4,14 +4,21 @@ use std::ffi::c_void;
 use std::sync::{Arc, Mutex, OnceLock};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-use windows::Win32::Graphics::Gdi::{UpdateWindow, COLOR_WINDOW, HBRUSH};
+use windows::Win32::Graphics::Gdi::{
+    CreateFontW, UpdateWindow, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, COLOR_WINDOW,
+    DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_BOLD, FW_NORMAL, HBRUSH, HFONT,
+    OUT_DEFAULT_PRECIS,
+};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::UI::Controls::EM_SETMARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, LoadCursorW, MessageBoxW,
-    PostQuitMessage, RegisterClassW, SetWindowTextW, ShowWindow, TranslateMessage, CW_USEDEFAULT,
-    HMENU, IDC_ARROW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, SW_SHOW, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WNDCLASSW, WS_BORDER, WS_CHILD,
-    WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    PostQuitMessage, RegisterClassW, SendMessageW, SetWindowTextW, ShowWindow, TranslateMessage,
+    BS_GROUPBOX, BS_PUSHBUTTON, CW_USEDEFAULT, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL,
+    ES_READONLY, HMENU, IDC_ARROW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, SW_SHOW,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_SETFONT, WNDCLASSW,
+    WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
+    WS_VISIBLE,
 };
 
 use crate::diagnostics;
@@ -69,11 +76,11 @@ pub fn run(state: Arc<Mutex<AppState>>) -> Result<()> {
             WINDOW_EX_STYLE::default(),
             PCWSTR(class_name.as_ptr()),
             PCWSTR(title.as_ptr()),
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_VISIBLE,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
             790,
-            490,
+            470,
             HWND::default(),
             HMENU::default(),
             instance,
@@ -119,30 +126,51 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
 }
 
 unsafe fn create_controls(hwnd: HWND) -> Result<()> {
-    create_value(hwnd, 0, 0, 790, 2)?;
+    let font = create_font(-15, FW_NORMAL.0 as i32, "Microsoft YaHei");
+    let section_font = create_font(-17, FW_BOLD.0 as i32, "Microsoft YaHei");
+    let value_font = create_font(-14, FW_NORMAL.0 as i32, "Microsoft YaHei");
 
-    create_label(hwnd, "机器码信息", 20, 18, 160, 28)?;
-    let auth_button = create_button(hwnd, "开启授权", ID_AUTH, 650, 16, 100, 34)?;
+    let machine_group = create_group(hwnd, "机器码信息", 24, 22, 732, 250)?;
+    set_font(machine_group, section_font);
 
-    create_label(hwnd, "网卡MAC地址", 36, 72, 120, 26)?;
-    let mac = create_value(hwnd, 170, 68, 560, 32)?;
+    let auth_button = create_button(hwnd, "开启授权", ID_AUTH, 638, 48, 92, 32)?;
+    set_font(auth_button, font);
 
-    create_label(hwnd, "主板序列号", 36, 116, 120, 26)?;
-    let motherboard = create_value(hwnd, 170, 112, 560, 32)?;
+    let mac_label = create_label(hwnd, "网卡MAC地址", 52, 72, 102, 24)?;
+    set_font(mac_label, font);
+    let mac = create_value(hwnd, 170, 68, 540, 30)?;
+    set_font(mac, value_font);
 
-    create_label(hwnd, "CPU序列号", 36, 160, 120, 26)?;
-    let cpu = create_value(hwnd, 170, 156, 560, 32)?;
+    let motherboard_label = create_label(hwnd, "主板序列号", 52, 116, 102, 24)?;
+    set_font(motherboard_label, font);
+    let motherboard = create_value(hwnd, 170, 112, 540, 30)?;
+    set_font(motherboard, value_font);
 
-    create_label(hwnd, "硬盘序列号", 36, 204, 120, 26)?;
-    let disk = create_value(hwnd, 170, 200, 560, 32)?;
+    let cpu_label = create_label(hwnd, "CPU序列号", 52, 160, 102, 24)?;
+    set_font(cpu_label, font);
+    let cpu = create_value(hwnd, 170, 156, 540, 30)?;
+    set_font(cpu, value_font);
 
-    create_label(hwnd, "软件信息", 20, 268, 160, 28)?;
-    create_label(hwnd, "版本:", 36, 314, 70, 26)?;
-    let software_version = create_value(hwnd, 104, 310, 120, 32)?;
-    create_button(hwnd, "检查更新", ID_CHECK_UPDATE, 238, 310, 92, 32)?;
+    let disk_label = create_label(hwnd, "硬盘序列号", 52, 204, 102, 24)?;
+    set_font(disk_label, font);
+    let disk = create_value(hwnd, 170, 200, 540, 30)?;
+    set_font(disk, value_font);
 
-    create_button(hwnd, "用户协议", ID_USER_AGREEMENT, 292, 398, 92, 30)?;
-    create_button(hwnd, "隐私策略", ID_PRIVACY_POLICY, 406, 398, 92, 30)?;
+    let software_group = create_group(hwnd, "软件信息", 24, 294, 360, 82)?;
+    set_font(software_group, section_font);
+
+    let version_label = create_label(hwnd, "版本:", 52, 329, 46, 24)?;
+    set_font(version_label, font);
+    let software_version = create_value(hwnd, 106, 325, 112, 30)?;
+    set_font(software_version, value_font);
+
+    let check_update = create_button(hwnd, "检查更新", ID_CHECK_UPDATE, 236, 325, 96, 30)?;
+    set_font(check_update, font);
+
+    let agreement = create_button(hwnd, "用户协议", ID_USER_AGREEMENT, 526, 325, 92, 30)?;
+    set_font(agreement, font);
+    let privacy = create_button(hwnd, "隐私策略", ID_PRIVACY_POLICY, 638, 325, 92, 30)?;
+    set_font(privacy, font);
 
     HANDLES.with(|handles| {
         *handles.borrow_mut() = Some(UiHandles {
@@ -261,17 +289,20 @@ unsafe fn create_label(
 }
 
 unsafe fn create_value(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) -> Result<HWND> {
-    create_control(
+    let hwnd = create_control_ex(
         hwnd,
-        "STATIC",
+        "EDIT",
         "",
         0,
         x,
         y,
         width,
         height,
-        WS_CHILD | WS_VISIBLE | WS_BORDER,
-    )
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE((ES_READONLY | ES_AUTOHSCROLL) as u32),
+        WS_EX_CLIENTEDGE,
+    )?;
+    set_edit_margins(hwnd, 8);
+    Ok(hwnd)
 }
 
 unsafe fn create_button(
@@ -292,7 +323,28 @@ unsafe fn create_button(
         y,
         width,
         height,
-        WS_CHILD | WS_VISIBLE,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WINDOW_STYLE(BS_PUSHBUTTON as u32),
+    )
+}
+
+unsafe fn create_group(
+    hwnd: HWND,
+    text: &str,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+) -> Result<HWND> {
+    create_control(
+        hwnd,
+        "BUTTON",
+        text,
+        0,
+        x,
+        y,
+        width,
+        height,
+        WS_CHILD | WS_VISIBLE | WINDOW_STYLE(BS_GROUPBOX as u32),
     )
 }
 
@@ -307,12 +359,38 @@ unsafe fn create_control(
     height: i32,
     style: WINDOW_STYLE,
 ) -> Result<HWND> {
+    create_control_ex(
+        parent,
+        class,
+        text,
+        id,
+        x,
+        y,
+        width,
+        height,
+        style,
+        WINDOW_EX_STYLE::default(),
+    )
+}
+
+unsafe fn create_control_ex(
+    parent: HWND,
+    class: &str,
+    text: &str,
+    id: i32,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    style: WINDOW_STYLE,
+    ex_style: WINDOW_EX_STYLE,
+) -> Result<HWND> {
     let class = to_wide(class);
     let text = to_wide(text);
     let module = GetModuleHandleW(None)?;
     let instance = HINSTANCE(module.0);
     let hwnd = CreateWindowExW(
-        WINDOW_EX_STYLE::default(),
+        ex_style,
         PCWSTR(class.as_ptr()),
         PCWSTR(text.as_ptr()),
         style,
@@ -326,6 +404,40 @@ unsafe fn create_control(
         None,
     )?;
     Ok(hwnd)
+}
+
+unsafe fn create_font(height: i32, weight: i32, face_name: &str) -> HFONT {
+    let face_name = to_wide(face_name);
+    CreateFontW(
+        height,
+        0,
+        0,
+        0,
+        weight,
+        0,
+        0,
+        0,
+        DEFAULT_CHARSET.0 as u32,
+        OUT_DEFAULT_PRECIS.0 as u32,
+        CLIP_DEFAULT_PRECIS.0 as u32,
+        CLEARTYPE_QUALITY.0 as u32,
+        (DEFAULT_PITCH.0 | FF_DONTCARE.0) as u32,
+        PCWSTR(face_name.as_ptr()),
+    )
+}
+
+unsafe fn set_font(hwnd: HWND, font: HFONT) {
+    let _ = SendMessageW(hwnd, WM_SETFONT, WPARAM(font.0 as usize), LPARAM(1));
+}
+
+unsafe fn set_edit_margins(hwnd: HWND, margin: i32) {
+    let packed = ((margin as u32) & 0xffff) | (((margin as u32) & 0xffff) << 16);
+    let _ = SendMessageW(
+        hwnd,
+        EM_SETMARGINS,
+        WPARAM((EC_LEFTMARGIN | EC_RIGHTMARGIN) as usize),
+        LPARAM(packed as isize),
+    );
 }
 
 fn set_text(hwnd: HWND, text: &str) {
