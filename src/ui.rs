@@ -4,11 +4,11 @@ use std::ffi::c_void;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateFontW, UpdateWindow, CLEARTYPE_QUALITY, CLIP_DEFAULT_PRECIS, COLOR_WINDOW,
-    DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_BOLD, FW_NORMAL, HBRUSH, HFONT,
-    OUT_DEFAULT_PRECIS,
+    CreateFontW, GetSysColorBrush, SetBkMode, SetTextColor, UpdateWindow, CLEARTYPE_QUALITY,
+    CLIP_DEFAULT_PRECIS, COLOR_WINDOW, DEFAULT_CHARSET, DEFAULT_PITCH, FF_DONTCARE, FW_BOLD,
+    FW_NORMAL, HBRUSH, HDC, HFONT, OUT_DEFAULT_PRECIS, TRANSPARENT,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Controls::EM_SETMARGINS;
@@ -17,8 +17,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PostQuitMessage, RegisterClassW, SendMessageW, SetWindowTextW, ShowWindow, TranslateMessage,
     BS_PUSHBUTTON, CW_USEDEFAULT, EC_LEFTMARGIN, EC_RIGHTMARGIN, ES_AUTOHSCROLL, ES_READONLY,
     HMENU, IDC_ARROW, MB_ICONERROR, MB_ICONINFORMATION, MB_OK, MSG, SW_SHOW, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_SETFONT, WNDCLASSW, WS_CAPTION, WS_CHILD,
-    WS_EX_CLIENTEDGE, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP, WS_VISIBLE,
+    WINDOW_STYLE, WM_COMMAND, WM_CREATE, WM_CTLCOLORSTATIC, WM_DESTROY, WM_SETFONT, WNDCLASSW,
+    WS_CAPTION, WS_CHILD, WS_EX_CLIENTEDGE, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_TABSTOP,
+    WS_VISIBLE,
 };
 
 use crate::diagnostics;
@@ -115,6 +116,12 @@ extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM
             handle_command(hwnd, id);
             LRESULT(0)
         }
+        WM_CTLCOLORSTATIC => unsafe {
+            let hdc = HDC(wparam.0 as *mut c_void);
+            let _ = SetBkMode(hdc, TRANSPARENT);
+            let _ = SetTextColor(hdc, COLORREF(0));
+            LRESULT(GetSysColorBrush(COLOR_WINDOW).0 as isize)
+        },
         WM_DESTROY => {
             unsafe {
                 PostQuitMessage(0);
