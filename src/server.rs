@@ -1,12 +1,13 @@
 use serde::Deserialize;
 use serde_json::json;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use crate::diagnostics;
+use crate::hardware::collect_machine_info;
 use crate::state::AppState;
 
 const DEFAULT_PORT: u16 = 18888;
@@ -24,16 +25,24 @@ struct SetAuthRequest {
 }
 
 pub fn start_server(state: Arc<Mutex<AppState>>) {
-    thread::spawn(move || {
-        if let Err(error) = run_server(state, DEFAULT_PORT) {
-            diagnostics::append_log(format!("localhost API 启动失败: {}", error));
-        }
-    });
+    let endpoints = [
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), DEFAULT_PORT),
+        SocketAddr::new(IpAddr::V6(Ipv6Addr::LOCALHOST), DEFAULT_PORT),
+    ];
+
+    for endpoint in endpoints {
+        let state = Arc::clone(&state);
+        thread::spawn(move || {
+            if let Err(error) = run_server(state, endpoint) {
+                diagnostics::append_log(format!("localhost API 启动失败: {}: {}", endpoint, error));
+            }
+        });
+    }
 }
 
-fn run_server(state: Arc<Mutex<AppState>>, port: u16) -> std::io::Result<()> {
-    let listener = TcpListener::bind(("127.0.0.1", port))?;
-    diagnostics::append_log(format!("localhost API 已启动: http://127.0.0.1:{}", port));
+fn run_server(state: Arc<Mutex<AppState>>, endpoint: SocketAddr) -> std::io::Result<()> {
+    let listener = TcpListener::bind(endpoint)?;
+    diagnostics::append_log(format!("localhost API 已启动: http://{}", endpoint));
 
     for stream in listener.incoming() {
         match stream {
@@ -73,6 +82,7 @@ fn handle_connection(mut stream: TcpStream, state: Arc<Mutex<AppState>>) -> std:
         return Ok(());
     }
 
+    diagnostics::append_log(format!("HTTP 请求: {} {}", request.method, request.path));
     let response = route_request(request, state);
     write_json(&mut stream, response.0, response.1, &response.2)
 }
@@ -120,8 +130,12 @@ fn route_request(
             }
         }
         ("GET", "/api/machine-code") => {
-            let mut state = state.lock().expect("state lock poisoned");
-            if !state.authorized {
+            let (authorized, cached_info) = {
+                let state = state.lock().expect("state lock poisoned");
+                (state.authorized, state.machine_info.clone())
+            };
+
+            if !authorized {
                 return (
                     403,
                     "Forbidden",
@@ -133,7 +147,15 @@ fn route_request(
                 );
             }
 
-            let info = state.machine_info(false);
+            let info = match cached_info {
+                Some(info) => info,
+                None => {
+                    let info = collect_machine_info();
+                    let mut state = state.lock().expect("state lock poisoned");
+                    state.set_machine_info(info.clone());
+                    info
+                }
+            };
             let mut value = info.simple_json();
             if let Some(object) = value.as_object_mut() {
                 object.insert("success".to_string(), json!(true));

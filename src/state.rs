@@ -1,5 +1,5 @@
 use crate::diagnostics;
-use crate::hardware::{collect_machine_info, MachineInfo};
+use crate::hardware::MachineInfo;
 
 #[derive(Debug)]
 pub struct AppState {
@@ -23,12 +23,8 @@ impl AppState {
         }
     }
 
-    pub fn machine_info(&mut self, refresh: bool) -> MachineInfo {
-        if refresh || self.machine_info.is_none() {
-            self.machine_info = Some(collect_machine_info());
-        }
-        self.machine_info
-            .clone()
-            .expect("machine_info must be initialized")
+    pub fn set_machine_info(&mut self, machine_info: MachineInfo) {
+        self.machine_info = Some(machine_info);
+        diagnostics::append_log("机器码缓存已更新");
     }
 }

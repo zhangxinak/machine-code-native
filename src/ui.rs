@@ -22,7 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::diagnostics;
-use crate::hardware::{FieldResult, MachineInfo};
+use crate::hardware::{collect_machine_info, FieldResult, MachineInfo};
 use crate::state::AppState;
 
 const ID_AUTH: i32 = 1001;
@@ -189,13 +189,15 @@ unsafe fn create_controls(hwnd: HWND) -> Result<()> {
 fn handle_command(hwnd: HWND, id: i32) {
     match id {
         ID_AUTH => {
-            with_state(|state| {
+            let should_collect = with_state(|state| {
                 let next = !state.authorized;
                 state.set_authorized(next);
-                if next {
-                    let _ = state.machine_info(true);
-                }
+                next
             });
+            if should_collect {
+                let info = collect_machine_info();
+                with_state(|state| state.set_machine_info(info));
+            }
             update_ui();
         }
         ID_CHECK_UPDATE => {
