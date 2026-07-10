@@ -24,6 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::diagnostics;
 use crate::hardware::{collect_machine_info, FieldResult, MachineInfo};
+use crate::remote_content;
 use crate::state::AppState;
 
 const ID_AUTH: i32 = 1001;
@@ -223,10 +224,12 @@ fn handle_command(hwnd: HWND, id: i32) {
             show_message(hwnd, "检查更新", "当前已是最新版本", false);
         }
         ID_USER_AGREEMENT => {
-            show_message(hwnd, "用户协议", user_agreement_text(), false);
+            let text = remote_content::user_agreement_text();
+            show_message(hwnd, "用户协议", &text, false);
         }
         ID_PRIVACY_POLICY => {
-            show_message(hwnd, "隐私策略", privacy_policy_text(), false);
+            let text = remote_content::privacy_policy_text();
+            show_message(hwnd, "隐私策略", &text, false);
         }
         _ => {}
     }
@@ -458,14 +461,6 @@ fn show_message(hwnd: HWND, title: &str, text: &str, error: bool) {
     unsafe {
         MessageBoxW(hwnd, PCWSTR(text.as_ptr()), PCWSTR(title.as_ptr()), flags);
     }
-}
-
-fn user_agreement_text() -> &'static str {
-    "用户协议\r\n\r\n欢迎使用机器码获取工具！\r\n\r\n本工具用于采集本机授权所需的硬件信息。点击开启授权即表示您同意工具读取必要的设备信息。"
-}
-
-fn privacy_policy_text() -> &'static str {
-    "隐私策略\r\n\r\n本工具会读取网卡MAC地址、主板序列号、CPU序列号、硬盘序列号等设备信息，用于生成机器码和授权校验。"
 }
 
 fn to_wide(text: &str) -> Vec<u16> {

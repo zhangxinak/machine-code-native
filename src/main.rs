@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 mod diagnostics;
 mod hardware;
+mod remote_content;
 mod server;
 mod state;
 mod ui;
