@@ -56,7 +56,7 @@ pub fn run(state: Arc<Mutex<AppState>>) -> Result<()> {
             hInstance: instance,
             lpszClassName: PCWSTR(class_name.as_ptr()),
             lpfnWndProc: Some(wnd_proc),
-            hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize),
+            hbrBackground: HBRUSH((COLOR_WINDOW.0 + 1) as isize as *mut c_void),
             ..Default::default()
         };
 
@@ -81,7 +81,7 @@ pub fn run(state: Arc<Mutex<AppState>>) -> Result<()> {
         )?;
 
         ShowWindow(hwnd, SW_SHOW);
-        UpdateWindow(hwnd)?;
+        let _ = UpdateWindow(hwnd);
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).into() {
