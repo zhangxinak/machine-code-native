@@ -12,7 +12,7 @@ mod ui;
 use state::AppState;
 
 fn main() {
-    diagnostics::clear_log();
+    diagnostics::begin_session();
     diagnostics::append_log(format!(
         "机器码获取工具 Native 版启动: version={}, exe={}, cwd={}, log={}",
         env!("CARGO_PKG_VERSION"),

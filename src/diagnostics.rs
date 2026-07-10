@@ -14,6 +14,11 @@ pub fn log_path() -> PathBuf {
     app_data_dir().join("startup.log")
 }
 
+pub fn begin_session() {
+    append_log("============================================================");
+    append_log("新的程序启动会话");
+}
+
 pub fn append_log(message: impl AsRef<str>) {
     let path = log_path();
     if let Some(parent) = path.parent() {
@@ -32,14 +37,6 @@ pub fn append_log(message: impl AsRef<str>) {
             );
         }
     }
-}
-
-pub fn clear_log() {
-    let path = log_path();
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let _ = fs::write(path, "");
 }
 
 pub fn read_log() -> String {
