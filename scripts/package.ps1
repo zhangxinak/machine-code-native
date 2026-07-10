@@ -54,12 +54,7 @@ if exist "%APPDATA%\machine-code-native\startup.log" (
 )
 echo.
 pause
-'@ | Set-Content -Path (Join-Path $OutDir "diagnostics.bat") -Encoding ASCII
-
-    @'
-@echo off
-call "%~dp0diagnostics.bat"
-'@ | Set-Content -Path (Join-Path $OutDir "诊断.bat") -Encoding OEM
+'@ | Set-Content -Path (Join-Path $OutDir "诊断.bat") -Encoding ASCII
 
     @"
 机器码获取工具 Native 版
@@ -68,7 +63,7 @@ call "%~dp0diagnostics.bat"
 1. 双击「machine-code-native.exe」。
 2. 点击「开启授权」后，工具会采集机器码。
 3. 网页可访问：http://127.0.0.1:18888/api/machine-code
-4. 若异常，优先双击「diagnostics.bat」。如果需要中文入口，也可以双击「诊断.bat」。日志路径：
+4. 若异常，双击「诊断.bat」。日志路径：
    %APPDATA%\machine-code-native\startup.log
 
 说明：
