@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::process::Command;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use crate::diagnostics;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -620,8 +623,11 @@ fn variant_to_string(value: &wmi::Variant) -> Option<String> {
 }
 
 fn wmic_value(args: &[&str], key: &str) -> Result<String> {
-    let output = Command::new("wmic")
-        .args(args)
+    let mut command = Command::new("wmic");
+    command.args(args);
+    hide_child_console_window(&mut command);
+
+    let output = command
         .output()
         .map_err(|e| anyhow!("启动 wmic 失败: {}", e))?;
 
@@ -649,3 +655,12 @@ fn wmic_value(args: &[&str], key: &str) -> Result<String> {
         Ok(fallback)
     }
 }
+
+#[cfg(windows)]
+fn hide_child_console_window(command: &mut Command) {
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    command.creation_flags(CREATE_NO_WINDOW);
+}
+
+#[cfg(not(windows))]
+fn hide_child_console_window(_command: &mut Command) {}
