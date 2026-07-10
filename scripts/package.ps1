@@ -44,7 +44,7 @@ start "" "%~dp0machine-code-native.exe"
 timeout /t 3 >nul
 echo.
 echo [2] Check localhost API
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:18888/health | Select-Object -ExpandProperty Content } catch { $_.Exception.Message }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $request = [Net.HttpWebRequest]::Create('http://127.0.0.1:18888/health'); $request.Method = 'GET'; $request.Timeout = 3000; $request.ReadWriteTimeout = 3000; $response = $request.GetResponse(); try { $reader = New-Object IO.StreamReader($response.GetResponseStream(), [Text.Encoding]::UTF8); $reader.ReadToEnd() } finally { if ($null -ne $reader) { $reader.Dispose() }; if ($null -ne $response) { $response.Close() } } } catch { $_.Exception.Message }"
 echo.
 echo [3] Print log
 if exist "%APPDATA%\machine-code-native\startup.log" (
