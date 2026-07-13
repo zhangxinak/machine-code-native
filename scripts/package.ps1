@@ -1,4 +1,5 @@
 param(
+    [ValidateSet("x86_64-pc-windows-msvc", "i686-pc-windows-msvc")]
     [string]$Target = "x86_64-pc-windows-msvc"
 )
 
@@ -11,8 +12,10 @@ $PackageName = if ($Target -eq "i686-pc-windows-msvc") {
 } else {
     "machine-code-native-windows-x64"
 }
+$Architecture = if ($Target -eq "i686-pc-windows-msvc") { "x86" } else { "x64" }
 $OutDir = Join-Path $Dist $PackageName
 $ExePath = Join-Path $Root "target\$Target\release\machine-code-native.exe"
+$VerifyPeScript = Join-Path $PSScriptRoot "verify-pe.ps1"
 
 Push-Location $Root
 try {
@@ -22,12 +25,18 @@ try {
         throw "未找到构建产物: $ExePath"
     }
 
+    & $VerifyPeScript -Path $ExePath -Architecture $Architecture
+
     if (Test-Path $OutDir) {
         Remove-Item -LiteralPath $OutDir -Recurse -Force
     }
     New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-    Copy-Item -LiteralPath $ExePath -Destination (Join-Path $OutDir "machine-code-native.exe")
+    $PackagedExePath = Join-Path $OutDir "machine-code-native.exe"
+    Copy-Item -LiteralPath $ExePath -Destination $PackagedExePath
+    & $VerifyPeScript -Path $PackagedExePath -Architecture $Architecture
+    $ExeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $PackagedExePath).Hash.ToLowerInvariant()
+    "${ExeHash}  machine-code-native.exe" | Set-Content -Path (Join-Path $OutDir "SHA256SUMS.txt") -Encoding ASCII
 
     @'
 @echo off
@@ -39,14 +48,21 @@ echo.
 echo Program dir: %~dp0
 echo Log path: %APPDATA%\machine-code-native\startup.log
 echo.
-echo [1] Start program
+echo [1] Environment and executable
+ver
+echo Process architecture: %PROCESSOR_ARCHITECTURE%
+echo WOW64 architecture: %PROCESSOR_ARCHITEW6432%
+set "MACHINE_CODE_EXE=%~dp0machine-code-native.exe"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $b = [IO.File]::ReadAllBytes($env:MACHINE_CODE_EXE); $p = [BitConverter]::ToInt32($b, 60); $m = [BitConverter]::ToUInt16($b, $p + 4); $h = [Security.Cryptography.SHA256]::Create(); try { $hash = [BitConverter]::ToString($h.ComputeHash($b)).Replace('-', '').ToLowerInvariant() } finally { $h.Dispose() }; 'PE machine: 0x{0:X4} (x86=0x014C, x64=0x8664)' -f $m; 'SHA256: ' + $hash } catch { 'Executable inspection failed: ' + $_.Exception.Message }"
+echo.
+echo [2] Start program
 start "" "%~dp0machine-code-native.exe"
 timeout /t 3 >nul
 echo.
-echo [2] Check localhost API
+echo [3] Check localhost API
 powershell -NoProfile -ExecutionPolicy Bypass -Command "try { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $request = [Net.HttpWebRequest]::Create('http://127.0.0.1:18888/health'); $request.Method = 'GET'; $request.Timeout = 3000; $request.ReadWriteTimeout = 3000; $response = $request.GetResponse(); try { $reader = New-Object IO.StreamReader($response.GetResponseStream(), [Text.Encoding]::UTF8); $reader.ReadToEnd() } finally { if ($null -ne $reader) { $reader.Dispose() }; if ($null -ne $response) { $response.Close() } } } catch { $_.Exception.Message }"
 echo.
-echo [3] Print log
+echo [4] Print log
 if exist "%APPDATA%\machine-code-native\startup.log" (
   type "%APPDATA%\machine-code-native\startup.log"
 ) else (
@@ -69,6 +85,7 @@ pause
 说明：
 - 本版不依赖 WebView2、Edge、Tauri、Electron。
 - 本版为 portable 版本，解压即可运行，不需要安装器。
+- x86 包用于 32 位 Windows，x64 包用于 64 位 Windows；两者均要求 Windows 7 或更高版本。
 - 如果主板/CPU/硬盘序列号取不到，界面和日志会显示具体失败原因。
 "@ | Set-Content -Path (Join-Path $OutDir "使用说明.txt") -Encoding UTF8
 
